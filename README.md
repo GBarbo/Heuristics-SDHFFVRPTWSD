@@ -5,19 +5,19 @@ Heuristics developed to tackle the Site Dependent Heterogeneous Fixed Fleet Vehi
 
 Simply run the ```.py``` files with the algorithm of choice or import their main functions with the same name as the files. Make sure all the following parameters are available:
 
-Classes:
-    vehicles: must contain capacity (float), freight cost (float) and site dependency matrix (R[vehicles x customers] (int)).
-    customers: must contain demand (float), minimum start time (float), service time (float) and maximum ending time (float).
+Classes: <br>
+- ```vehicles```: must contain capacity ```a``` (float), freight cost ```cf``` (float) and site dependency matrix (```R```[vehicles x customers] (int)).
+- ```customers```: must contain demand ```q``` (float), minimum start time ```e``` (float), service time ```s``` (float) and maximum ending time ```l``` (float).
 
-Matrices:
-    distances: matrix [customers x customers] of distances between two customers or depot (int).
-    travel time: matrix [customers x customers] of travel time between two customers or depot (float).
+Matrices: <br>
+- distances ```d```: matrix [customers x customers] of distances between two customers or depot (int).
+- travel time ```t```: matrix [customers x customers] of travel time between two customers or depot (float).
 
 ## Algorithms
 
 ### Clarke-Wright for the SDHFFVRPTWSD
 
-Based on the Clarke-Wright (1964) savings heuristic, the file ```clarke_wright.py``` is my first approach on tackling the SDHFFVRPTWSD with a constructive heursitic.
+Based on the Clarke-Wright (1964) savings heuristic, the file ```clarke_wright.py``` is my first approach on tackling the SDHFFVRPTWSD with a constructive heursitic. The pseudocode below describes the general procedure.
 
 ```text
 1.  calculate savings for each pair of clients
