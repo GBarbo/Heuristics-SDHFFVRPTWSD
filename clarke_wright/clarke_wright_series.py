@@ -73,21 +73,21 @@ def merge_route(current_route, pair):
     i, j = pair
 
     if i in current_route:
-        if current_route.index(i) == 1:
-            new_route = current_route[:1] + [j] + current_route[1:]
-        elif current_route.index(i) == len(current_route) - 2:
+        if current_route.index(i) == len(current_route) - 2:
             new_route = current_route[:len(current_route) - 1] + [j] + current_route[len(current_route) - 1:]
+        elif current_route.index(i) == 1:
+            new_route = current_route[:1] + [j] + current_route[1:]
         else:
-            raise Exception("i inside the route")
+            raise Exception("i not in route")
     elif j in current_route:
-        if current_route.index(j) == 1:
-            new_route = current_route[:1] + [i] + current_route[1:]
-        elif current_route.index(j) == len(current_route) - 2:
+        if current_route.index(j) == len(current_route) - 2:
             new_route = current_route[:len(current_route) - 1] + [i] + current_route[len(current_route) - 1:]
+        elif current_route.index(j) == 1:
+            new_route = current_route[:1] + [i] + current_route[1:]
         else:
-            raise Exception("j inside the route")
+            raise Exception("j not in route")
     else:
-        raise Exception("Either or both not in route")
+        raise Exception("Both not in route")
 
     return new_route
 
@@ -134,10 +134,6 @@ def clarke_wright(customers, vehicles, d, t):
                             last_customer = j
                             load += unserviced_demands[j]
                             break
-                        else:
-                            continue
-                    else:
-                        continue
                 else:
                     break
 
@@ -158,8 +154,6 @@ def clarke_wright(customers, vehicles, d, t):
                             load += unserviced_demands[j]
                             last_customer = j
                             break
-                        else:
-                            continue
                     elif j in route and check_site_dependency(vehicle, i):
                         if route.index(j) not in [1,len(route)-2]:
                             continue
@@ -169,10 +163,6 @@ def clarke_wright(customers, vehicles, d, t):
                             load += unserviced_demands[i]
                             last_customer = i
                             break
-                        else:
-                            continue
-                    else:
-                        continue
                 else:
                     break
             if load > vehicle.capacity:
@@ -195,19 +185,19 @@ def clarke_wright(customers, vehicles, d, t):
 
 def main():
     # Parameters
+    # Optimum: v0 = 0-4-5-1(0.2)-0, v1 = 0-3-1(0.8)-2-0 
 
     # Number of clients and vehicles
     n = 5  # number of clients
     V = 2  # number of vehicles
 
     # Demand (ton)
-    q = [0, 18, 0.8, 0.8, 6, 4]  
-    #q = [0.0, 9.0, 0.8, 2.8, 6.0, 11.0]  
+    q = [0, 18, 0.8, 0.8, 6, 4]
 
     # Time windows (start, service, and end times)
-    e = [8, 10, 10, 8, 8, 8]        # Start time (hours)
+    e = [8, 12, 10, 8, 8, 8]        # Start time (hours)
     s = [0, 2.5, 1, 1.5, 1.5, 1]    # Service time (hours)
-    l = [24, 20, 20, 20, 12, 13]    # End time (hours)
+    l = [24, 20, 20, 14, 12, 13]    # End time (hours)
 
     # Distance matrix (km)
     d = [
@@ -237,7 +227,7 @@ def main():
 
     # Matrix indicating whether vehicle v can deliver to client p (1 for yes, 0 for no)
     R = [
-        [1, 0, 1, 1, 1],
+        [1, 0, 0, 1, 1],
         [1, 1, 1, 1, 0]
     ]
 
