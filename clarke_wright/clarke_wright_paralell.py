@@ -91,25 +91,39 @@ def merge_route(current_route, pair):
 
     return new_route
 
-def check_routes(pair, routes):
-    # Input: pair of customers and list of routes
-    # Output: if either i or j is found in one route and not in the others, return route_id, else return -1
+def check_routes(pair, routes, fully_serviced):
+    # Input: pair of customers, list of routes an list of fully serviced customers
+    # Output: index of the first route with a merger that could be made, else return negative number
 
     i, j = pair
-
-    in_route = False
     route_id = -2 # If the loop runs and neither i nor j is found, -2 is returned to signal new route
 
-    for k in range(len(routes)):
-        if (i in routes[k][0]) and (j in routes[k][0]):
-            return -1   # Both already in the route
-        if (i in routes[k][0]) or (j in routes[k][0]):
-            if in_route:
-                return -1   # If i or j was already in a previous route, return -1 to signal unfeasibility
-            else:
-                in_route = True
+    if i not in fully_serviced and j in fully_serviced:
+        for k in range(len(routes)):
+            if (i in routes[k][0]) and (j in routes[k][0]):
+                continue
+            if (j in routes[k][0]):
                 route_id = k
-    
+                break   # Takes the first vehicle found
+
+    elif j not in fully_serviced and i in fully_serviced:
+        for k in range(len(routes)):
+            if (i in routes[k][0]) and (j in routes[k][0]):
+                continue
+            if (i in routes[k][0]):
+                route_id = k
+                break   # Takes the first vehicle found
+
+    elif i not in fully_serviced and j not in fully_serviced:
+        for k in range(len(routes)):
+            if (i in routes[k][0]) and (j in routes[k][0]):
+                continue
+            if (i in routes[k][0]) or (i in routes[k][0]):
+                route_id = k
+                break   # Takes the first vehicle found
+    else:
+        raise Exception("Both fully serviced, remove saving pair")
+   
     return route_id
 
 def clarke_wright(customers, vehicles, d, t):
@@ -136,7 +150,7 @@ def clarke_wright(customers, vehicles, d, t):
     while not all_customers_serviced:
         for pair in savings:
             i, j = pair              
-            route_id = check_routes(pair, routes)
+            route_id = check_routes(pair, routes, fully_serviced)
             
             if len(routes) < V:
                 # Merge pair to the existing routes if possible
@@ -158,7 +172,6 @@ def clarke_wright(customers, vehicles, d, t):
                         loads[vehicle.id] += unserviced_demands[j] # Update load
                         last_customer_id = j
                         break
-
                     elif (j in route) and (j == route[1] or j == route[len(route) - 2]):
                         route = merge_route(route, pair)
                         if not check_time_windows(t, route, customers):
