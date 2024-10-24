@@ -43,19 +43,21 @@ def check_time_windows(t, possible_route, customers):
     # Input: matrix of travel times (t), pssible route and list of customers
     # Output: whether any of the customers or depot in the route disobeys its time window
 
-    feasible = True
     time = customers[0].start_time
-    for i in range(1, len(possible_route)):
+    for i in range(1, len(possible_route) - 1):
         time += t[possible_route[i-1]][possible_route[i]]
         if time < customers[possible_route[i]].start_time:
-            feasible = False
             #print(f'start time violation at {possible_route[i]}')
+            return False
         time += customers[possible_route[i]].service_time
         if time > customers[possible_route[i]].end_time:
-            feasible = False
             #print(f'end time violation at {possible_route[i]}')
-            
-    return feasible
+            return False
+        if i == 1 and time - t[possible_route[0]][possible_route[i]] > customers[possible_route[0]].end_time:
+            #print(f'depot end time violation')
+            return False
+        
+    return True
 
 def check_site_dependency(vehicle, customer_id):
     # Input: vehicle and customer id
@@ -197,7 +199,7 @@ def main():
     # Time windows (start, service, and end times)
     e = [8, 12, 10, 8, 8, 8]        # Start time (hours)
     s = [0, 2.5, 1, 1.5, 1.5, 1]    # Service time (hours)
-    l = [24, 20, 20, 14, 12, 13]    # End time (hours)
+    l = [18, 20, 20, 14, 12, 13]    # End time (hours)
 
     # Distance matrix (km)
     d = [
