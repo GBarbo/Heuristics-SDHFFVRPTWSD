@@ -17,7 +17,7 @@ Matrices: <br>
 
 ### Clarke-Wright for the SDHFFVRPTWSD
 
-Based on the Clarke-Wright (1964) savings heuristic, the files ```clarke_wright_series.py``` and ```clarke_wright_paralell.py``` are my first approaches on tackling the SDHFFVRPTWSD with a constructive heursitic.
+Based on the Clarke-Wright (1964) savings heuristic, the files ```clarke_wright_series.py``` and ```clarke_wright_paralell.py``` are my first approaches on tackling the SDHFFVRPTWSD with a constructive heursitic. The ```clarke_wright.py``` file has the best approach tailored to tackle the problem.
 
 #### Series Clarke-Wright
 This algorithm iteratively merges routes until the vehicle capacity is exceeded; only then, another route is created if there are available vehicles. Thus, it is best suited for instances which the freight cost spread is high and it is very important to get the best possible route to the vehicles with least freight cost.
@@ -134,3 +134,56 @@ This algorithm iteratively merges single customers with the existing routes and 
 53. RETURN routes and f matrix
 
 ```
+
+#### Paralell Clarke-Wright with Starting Criterium
+
+Previous paralell Clarke-Wright with a restriction criterium to start route: customers that can be serviced with less vehicles are chosen to start the routes for the vehicles that can service them. If there is a draw, the customer with a smaller time window is routed first. If there is another draw, the criterium takes the customer with the least demand (so its service does not affect significately the vehicle's capacity). The pseudocode below describes the general procedure.
+
+```text
+calculate savings for each pair of clients
+sort savings in descending order of saving
+unserviced_demands <- Ø
+fully_serviced <- Ø
+routes <- Ø
+available_vehicles <- vehicles
+WHILE there are customers with unserviced demands DO:
+    IF there is at least a vehicle without a route assigned to it:
+        chose the customer j with most restrictions (R, time windows, least demand)
+        IF the route [0,j,0] is feasible for the vehicle that can service j:
+            IF the vehicle was not yet assigned to a route:
+                add [0,j,0] to routes and assign the vehicle for it
+            ENDIF
+        ENDIF
+    ELSE:
+        FOR (i, j) in sorted savings pairs DO:
+            IF either i or j belongs to a route and both not to the others:
+                route = route from routes containing either i or j
+                vehicle = vehicle for which the route was assigned
+                IF the vehicle is full:
+                    CONTINUE
+                ENDIF
+                IF either i or j are either the first or last customers and the new route is feasible:
+                    merge route with [0,i,0] or [0,j,0]
+                    update route in the routes list
+                    load[vehicle] += unserviced demand of the merged customer
+                    set last customer = merged customer
+                    BREAK FOR
+                ENDIF
+            ENDIF
+        ELSE:
+            BREAK WHILE
+        ENDFOR
+    ENDIF
+    IF load[vehicle] > vehicle capacity:
+        serviced demand = unserviced demand[last customer] - (load[vehicle] - vehicle capacity)
+        unserviced demand[last customer] -= serviced demand
+        f[vehicle][last customer] = serviced demand / total demand
+        mark vehicle as full so it cannot be routed anymore
+    ELSE:
+        f[vehicle][last customer] = unserviced demand / total demand
+        unserviced demand[last customer] = 0
+    ENDIF
+ENDWHILE
+RETURN routes and f matrix
+```
+

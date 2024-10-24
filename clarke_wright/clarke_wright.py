@@ -1,7 +1,8 @@
 # ==================================================
 # Clarke-Wright Algorithm for the SDHFFVRPTWSD
 # Author: Giovanni Cesar Meira Barboza
-# Date: 2024-10-14
+# Version: Paralell with starting criterium
+# Date: 2024-10-24
 # Description: constructive heuristic to tackle the SDHFFVRPTWSD problem
 # ==================================================
 
@@ -124,12 +125,12 @@ def check_routes(pair, routes, fully_serviced):
                 route_id = k
                 break   # Takes the first vehicle found
     else:
-        raise Exception("Both fully serviced, remove saving pair")
+        raise Exception(f"Both {i} and {j} fully serviced, remove saving pair")
    
     return route_id
 
-def clarke_wright(customers, vehicles, d, t):
-    # Input: list of customers, list of vehicles, matrix of distances (d) and matrix of travel times (t)
+def clarke_wright(customers, vehicles, d, t, R):
+    # Input: list of customers, list of vehicles, matrix of distances (d) and matrix of travel times (t) and site dependency matrix (R)
     # Output: Feasible routes for each vehicle and matrix of split deliveries f [vehicles x customers]
 
     n = len(customers) - 1
@@ -149,59 +150,46 @@ def clarke_wright(customers, vehicles, d, t):
     loads = [0 for _ in range(V)]
     f = [[0.0] * (n + 1) for _ in range(V)]
 
+    # Starting route preparation
+
+    # Make restrictions list
+    count_R = [0 for _ in range(n)]
+    time_window_size = [0 for _ in range(n)]
+    demands = unserviced_demands[1:]
+
+    for j in range(n):
+        for i in range(V):
+            count_R[j] += R[i][j]
+        time_window_size[j] = customers[j+1].end_time - customers[j+1].start_time
+
+    # Order candidates for starting route (R > time_window > least demand)
+    ranked_indices = sorted(
+        range(len(count_R)), 
+        key=lambda i: (count_R[i], time_window_size[i], demands[i])
+    )
+    ranked_indices = [i + 1 for i in ranked_indices]
+
+    # Main loop
     while not all_customers_serviced:
-        for pair in savings:
-            i, j = pair              
-            route_id = check_routes(pair, routes, fully_serviced)
-            
-            if len(routes) < V:
-                # Merge pair to the existing routes if possible
-                if route_id >= 0:
-                    route = routes[route_id][0]
-                    vehicle = vehicles[routes[route_id][1]]
-
-                    if loads[vehicle.id] > vehicle.capacity:    # Full vehicle, prevent further routing
-                        continue
-
-                    if not (check_site_dependency(vehicle, i) and check_site_dependency(vehicle, j)):
-                        continue
-
-                    if (i in route) and (i == route[1] or i == route[len(route) - 2]):
-                        route = merge_route(route, pair)
-                        if not check_time_windows(t, route, customers):
-                            continue
-                        routes[route_id][0] = route[:]  # Update route
-                        loads[vehicle.id] += unserviced_demands[j] # Update load
-                        last_customer_id = j
-                        break
-                    elif (j in route) and (j == route[1] or j == route[len(route) - 2]):
-                        route = merge_route(route, pair)
-                        if not check_time_windows(t, route, customers):
-                            continue
-                        routes[route_id][0] = route[:]  # Update route
-                        loads[vehicle.id] += unserviced_demands[i]  # Update load
-                        last_customer_id = i
-                        break
-
-                elif route_id < -1: # Neither i or j belong to an existing route
-                    # Create new route
-                    vehicle = min(available_vehicles, key=lambda vehicle: vehicle.freight_cost) # Pick the available vehicle with minimum cost
-                    if check_time_windows(t, [0,i,0], customers) and check_site_dependency(vehicle, i):
-                        route = [0,i,0]
-                        routes.append([route, vehicle.id])
-                        available_vehicles.remove(vehicle)
-                        loads[vehicle.id] += unserviced_demands[i]  # Update load
-                        last_customer_id = i
-                        break
-                    elif check_time_windows(t, [0,j,0], customers) and check_site_dependency(vehicle, j):
+        if len(routes) < V:
+            for j in ranked_indices:
+                route = []
+                for vehicle in available_vehicles:
+                    if check_site_dependency(vehicle, j) and check_time_windows(t, [0,j,0], customers):
                         route = [0,j,0]
                         routes.append([route, vehicle.id])
                         available_vehicles.remove(vehicle)
-                        loads[vehicle.id] += unserviced_demands[j]  # Update load
+                        loads[vehicle.id] += unserviced_demands[j]
                         last_customer_id = j
                         break
-
-            else:   # There is one route per vehicle
+                if len(route) > 0:
+                    break
+        
+        else:   # There is at least one route per vehicle
+            for pair in savings:
+                i, j = pair              
+                route_id = check_routes(pair, routes, fully_serviced)
+                
                 # Merge pair to the existing routes if possible
                 if route_id >= 0:
                     route = routes[route_id][0]
@@ -229,8 +217,8 @@ def clarke_wright(customers, vehicles, d, t):
                         loads[vehicle.id] += unserviced_demands[i]  # Update load
                         last_customer_id = i
                         break
-        else:
-            break
+            else:
+                break
 
         if loads[vehicle.id] > vehicle.capacity:
             serviced_demand = unserviced_demands[last_customer_id] - (loads[vehicle.id] - vehicle.capacity)
@@ -241,7 +229,7 @@ def clarke_wright(customers, vehicles, d, t):
             unserviced_demands[last_customer_id] = 0
         
         for i in range(1, len(unserviced_demands)):
-            if unserviced_demands[i] < 0.0001:
+            if unserviced_demands[i] < 0.0001 and i not in fully_serviced:
                 fully_serviced.append(i)
 
         for pair in savings[:]:
@@ -251,7 +239,7 @@ def clarke_wright(customers, vehicles, d, t):
 
         if len(fully_serviced) == n:
             all_customers_serviced = True
-
+    
     return routes, f
 
 def main():
@@ -312,7 +300,7 @@ def main():
         vehicle(id, a[id], cf[id], R[id]) for id in range(V)
     ]
 
-    final_routes, f = clarke_wright(customers, vehicles, d, t)
+    final_routes, f = clarke_wright(customers, vehicles, d, t, R)
     
     for i in range(len(final_routes)):
         print(f'Vehicle {final_routes[i][1]} route = {final_routes[i][0]}')
