@@ -242,6 +242,19 @@ def clarke_wright(customers, vehicles, d, t, R):
     
     return routes, f
 
+def calculate_cost(routes, d, vehicles):
+    # Input: list of routes and vehicles assigned, distances matrix and list of vehicles (objects)
+    # Output: objective function cost for the mixed fleet VRP
+
+    cost = 0
+    for k in routes:
+        route = k[0]
+        vehicle_id = k[1]
+        for i in range(1, len(route)):
+            cost += vehicles[vehicle_id].freight_cost * d[i-1][i]
+
+    return cost
+
 def main():
     # Parameters
     # Optimum: v0 = 0-4-5-1(0.2)-0, v1 = 0-3-1(0.8)-2-0 
@@ -307,6 +320,8 @@ def main():
     
     for i in range(len(f)):
         print(f'f[{i}] = {f[i]}') 
+
+    print(f'Cost = {calculate_cost(final_routes, d, vehicles)}')
 
 if __name__ == "__main__":
     main()
