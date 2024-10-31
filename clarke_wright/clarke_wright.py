@@ -177,6 +177,7 @@ def clarke_wright(customers, vehicles, d, t, R):
                 for vehicle in available_vehicles:
                     if check_site_dependency(vehicle, j) and check_time_windows(t, [0,j,0], customers):
                         route = [0,j,0]
+                        ranked_indices.remove(j)    # Prevent j from starting another route
                         routes.append([route, vehicle.id])
                         available_vehicles.remove(vehicle)
                         loads[vehicle.id] += unserviced_demands[j]
@@ -251,8 +252,8 @@ def calculate_cost(routes, d, vehicles):
         route = k[0]
         vehicle_id = k[1]
         for i in range(1, len(route)):
-            cost += vehicles[vehicle_id].freight_cost * d[i-1][i]
-
+            cost += vehicles[vehicle_id].freight_cost * d[route[i-1]][route[i]]
+    
     return cost
 
 def main():
