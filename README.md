@@ -187,3 +187,6 @@ ENDWHILE
 RETURN routes and f matrix
 ```
 
+#### Clarke Wright GRASP
+
+An additional Clarke-Wright algorithm is used to generate multiple solutions. The ```clarke_wright_grasp``` function generates a population of feasible and infeasible (for time-windows or site depedency) solutions. To do that, instead of picking the best pair according to savings, a random pair is chosen according to the harmonic distribution, so that pairs with greater saving have a probability of being picked two times greater than the next pair of savings.
