@@ -1,8 +1,8 @@
 # ==================================================
 # Clarke-Wright Algorithm for the SDHFFVRPTWSD
 # Author: Giovanni Cesar Meira Barboza
-# Version: Paralell with starting criterium
-# Date: 2024-10-24
+# Version: Paralell with starting criterium and concomitance correction
+# Date: 2024-11-18
 # Description: constructive heuristic to tackle the SDHFFVRPTWSD problem
 # ==================================================
 
@@ -129,9 +129,137 @@ def check_routes(pair, routes, fully_serviced):
    
     return route_id
 
+def concomitance_detection(routes, customers, t):
+    # Input: routes, list of customers and time matrix
+    # Output: routes respecting the non concomitance of two or more vehicles in a customer
+
+    # Identify customer and routes where there is concomitance
+    concomitance = []   # List of [customer_id, route_id1, route_id2] where there is concomitance
+
+    start_times = []    # List of customers start time from each route
+    for i in range(len(routes)):
+        time = customers[0].start_time
+        route = routes[i][0]
+        for j in range(1, len(route) - 1):
+            time += t[route[j-1]][route[j]]
+            start_times.append([route[j], i, time])   # Each start_time element is stored as [customer_id, route_id, time of arrival]
+            time += customers[route[j]].service_time
+    
+    sorted_start_times = sorted(start_times, key=lambda x: x[2])
+
+    current_customers = []
+    for x in sorted_start_times:
+        current_customer_id, current_route_id, time = x
+
+        # Check for concomitaces
+        for customer_id, route_id, time_of_arrival in current_customers:
+            if current_customer_id == customer_id:
+                if time < time_of_arrival + customers[customer_id].service_time:
+                    concomitance.append([customer_id, route_id, current_route_id])
+
+            # Remove serviced customers from time sweep
+            if time >= customer_id + customers[customer_id].service_time:
+                current_customers.remove([customer_id, route_id, time_of_arrival])
+
+        # Add customer to current service
+        current_customers.append([current_customer_id, current_route_id, time])
+
+    return concomitance
+
+def route_time(customer_id, route, wait, customers, t):
+    # Input: customer id, route and wait lists
+    # Output: start time of the service in the customer
+
+    time = customers[0].start_time
+
+    for i in range(1, route.index(customer_id) + 1):
+        time += customers[route[i-1]].service_time
+        time += t[route[i-1]][route[i]]
+        if wait[route[i]] > 0.0001:
+            time += wait[route[i]]
+
+    return time
+
+def concomitance_wait(concomitances, routes, customers, t):
+    # Input: list of concomitances (elements [customer_id, route_id1, route_id2]), routes, list of customers and time matrix
+    # Output: wait vector, where each element is the wait the vehicle (row) has to wait to start the service at the customer (line)
+
+    n = len(customers) - 1
+    V = len(routes)
+
+    wait = [[0.0] * (n + 1) for _ in range(V)]
+    
+    for customer_id, route_id1, route_id2 in concomitances:
+        time = route_time(customer_id, routes[route_id1][0], wait[route_id1], customers, t)
+        time += customers[customer_id].service_time
+        wait[route_id2][customer_id] += time - route_time(customer_id, routes[route_id2][0], wait[route_id2], customers, t)
+    
+    return wait
+
+def check_time_windows_concomitance(wait, t, possible_route, customers):
+    # Input: wait times for the route, matrix of travel times (t), pssible route and list of customers
+    # Output: whether any of the customers or depot in the route disobeys its time window considering the wait
+
+    time = customers[0].start_time
+    for i in range(1, len(possible_route) - 1):
+        time += t[possible_route[i-1]][possible_route[i]]
+        if wait[i] > 0.0001:
+            time += wait[i]
+        if time < customers[possible_route[i]].start_time:
+            #print(f'start time violation at {possible_route[i]}')
+            return False
+        time += customers[possible_route[i]].service_time
+        if time > customers[possible_route[i]].end_time:
+            #print(f'end time violation at {possible_route[i]}')
+            return False
+        if i == 1 and time - t[possible_route[0]][possible_route[i]] > customers[possible_route[0]].end_time:
+            #print(f'depot end time violation')
+            return False
+        
+    return True
+
+def deep_copy(obj):
+    if isinstance(obj, list):
+        return [deep_copy(element) for element in obj]
+    else:
+        return obj
+    
+def swap_intra_route(route, i, j):
+    new_route = route[:]
+    
+    if 1 <= i < len(new_route) - 1 and 1 <= j < len(new_route) - 1:
+        new_route[i], new_route[j] = new_route[j], new_route[i]
+    
+    return new_route
+
+def concomitance_correction(wait, concomitances, routes, customers, t):
+    # Try to fix time windows infeasibility by swapping customer with the previous one
+
+    new_wait = deep_copy(wait)
+    new_routes = deep_copy(routes)
+
+    for customer_id, route_id1, route_id2 in concomitances:
+        if not check_time_windows_concomitance(new_wait[route_id2], t, new_routes[route_id2][0], customers):
+            new_wait[route_id2] = [0.0] * (len(customers))
+
+            # Perform swap, avoid with depot
+            if customer_id != new_routes[route_id2][0][1]: 
+                new_routes[route_id2][0] = swap_intra_route(new_routes[route_id2][0], new_routes[route_id2][0].index(customer_id), new_routes[route_id2][0].index(customer_id) - 1)
+
+            concomitances = concomitance_detection(new_routes, customers, t)
+            new_wait = concomitance_wait(concomitances, new_routes, customers, t)
+            
+            # If new route is time infeasible, avoid swap
+            if not check_time_windows_concomitance(new_wait[route_id2], t, new_routes[route_id2][0], customers):
+                new_routes = deep_copy(routes)
+                new_wait = deep_copy(wait)
+                continue
+
+    return new_routes, new_wait
+
 def clarke_wright(customers, vehicles, d, t, R):
     # Input: list of customers, list of vehicles, matrix of distances (d) and matrix of travel times (t) and site dependency matrix (R)
-    # Output: Feasible routes for each vehicle and matrix of split deliveries f [vehicles x customers]
+    # Output: Feasible routes for each vehicle, matrix of split deliveries f [vehicles x customers] and wait matrix of the same size
 
     n = len(customers) - 1
     V = len(vehicles)
@@ -241,7 +369,12 @@ def clarke_wright(customers, vehicles, d, t, R):
         if len(fully_serviced) == n:
             all_customers_serviced = True
     
-    return routes, f
+    # Check and correct concomitances
+    concomitances = concomitance_detection(routes, customers, t)
+    wait = concomitance_wait(concomitances, routes, customers, t)
+    routes, wait = concomitance_correction(wait, concomitances, routes, customers, t)
+
+    return routes, f, wait
 
 def calculate_cost(routes, d, vehicles):
     # Input: list of routes and vehicles assigned, distances matrix and list of vehicles (objects)
@@ -258,7 +391,7 @@ def calculate_cost(routes, d, vehicles):
 
 def main():
     # Parameters
-    # Optimum: v0 = 0-4-5-1(0.2)-0, v1 = 0-3-1(0.8)-2-0 
+    # Optimum: v0 = 0-4-5-1(0.2)-0, v1 = 0-3-1(0.8)-2-0, cost = 
 
     # Number of clients and vehicles
     n = 5  # number of clients
@@ -314,13 +447,16 @@ def main():
         vehicle(id, a[id], cf[id], R[id]) for id in range(V)
     ]
 
-    final_routes, f = clarke_wright(customers, vehicles, d, t, R)
+    final_routes, f, wait = clarke_wright(customers, vehicles, d, t, R)
     
     for i in range(len(final_routes)):
         print(f'Vehicle {final_routes[i][1]} route = {final_routes[i][0]}')
     
     for i in range(len(f)):
         print(f'f[{i}] = {f[i]}') 
+
+    for i in range(len(wait)):
+        print(f'wait[{i}] = {wait[i]}')
 
     print(f'Cost = {calculate_cost(final_routes, d, vehicles)}')
 
