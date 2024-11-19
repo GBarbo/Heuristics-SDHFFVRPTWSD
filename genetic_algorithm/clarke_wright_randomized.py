@@ -1,8 +1,8 @@
 # ==================================================
 # Clarke-Wright Algorithm for the SDHFFVRPTWSD
 # Author: Giovanni Cesar Meira Barboza
-# Version: Paralell with starting criterium with harmonic selection of savings
-# Date: 2024-11-06
+# Version: Paralell with starting criterium with harmonic selection of savings and concomitance correction
+# Date: 2024-11-18
 # Description: constructive heuristic to generate SDHFFVRPTWSD solutions
 # ==================================================
 
@@ -59,45 +59,6 @@ def check_time_windows(t, possible_route, customers):
             return False
 
     return True
-
-class Individual:
-    def __init__(self, routes, partial_demands, customers, vehicles, d, t):
-        self.routes = routes
-        self.partial_demands = partial_demands
-        self.feasibility = True
-        self.fitness = self.calculate_fitness(routes, customers, vehicles, d, t)
-
-    def calculate_fitness(self, routes, customers, vehicles, d, t):
-        # Calculates fitness function and determines feasibility
-
-        cost = 0
-        for route, vehicle_id in routes:
-            for i in range(1, len(route)):
-                cost += d[route[i-1]][route[i]] * vehicles[vehicle_id].freight_cost
-
-        time_infeasibility, site_infeasibility, capacity_infeasibility = 0, 0, 0
-
-        for route, vehicle_id in routes:
-            # Time infeasibility
-            if not check_time_windows(t, route, customers):
-                self.feasibility = False
-                time_infeasibility += 1
-
-            # Site infeasibility
-            for i in range(1, len(route) - 1):
-                if not check_site_dependency(vehicles[vehicle_id], route[i]):
-                    self.feasibility = False
-                    site_infeasibility += 1
-            
-            # Capacity infeasibility 
-            if not check_vehicle_capacity(route, vehicle_id, self.partial_demands[vehicle_id], customers, vehicles):
-                self.feasibility = False
-                capacity_infeasibility += 1
-        
-        # Fitness as a function of cost and weighted infeasibilities
-        fitness = cost + 10000 * time_infeasibility + 10000 * site_infeasibility + 10000 * capacity_infeasibility
-        
-        return(fitness)
 
 def calculate_savings(d):
     # Input: triangular matrix of distances (d) between all customers and depot
@@ -178,6 +139,142 @@ def check_routes(pair, routes, fully_serviced):
    
     return route_id
 
+def concomitance_detection(routes, customers, t):
+    # Input: routes, list of customers and time matrix
+    # Output: routes respecting the non concomitance of two or more vehicles in a customer
+
+    # Identify customer and routes where there is concomitance
+    concomitance = []   # List of [customer_id, route_id1, route_id2] where there is concomitance
+
+    start_times = []    # List of customers start time from each route
+    for i in range(len(routes)):
+        time = customers[0].start_time
+        route = routes[i][0]
+        for j in range(1, len(route) - 1):
+            time += t[route[j-1]][route[j]]
+            start_times.append([route[j], i, time])   # Each start_time element is stored as [customer_id, route_id, time of arrival]
+            time += customers[route[j]].service_time
+    
+    sorted_start_times = sorted(start_times, key=lambda x: x[2])
+
+    current_customers = []
+    for x in sorted_start_times:
+        current_customer_id, current_route_id, time = x
+
+        # Check for concomitaces
+        for customer_id, route_id, time_of_arrival in current_customers:
+            if current_customer_id == customer_id:
+                if time < time_of_arrival + customers[customer_id].service_time:
+                    concomitance.append([customer_id, route_id, current_route_id])
+
+            # Remove serviced customers from time sweep
+            if time >= customer_id + customers[customer_id].service_time:
+                current_customers.remove([customer_id, route_id, time_of_arrival])
+
+        # Add customer to current service
+        current_customers.append([current_customer_id, current_route_id, time])
+
+    return concomitance
+
+def route_time(customer_id, route, wait, customers, t):
+    # Input: customer id, route and wait lists
+    # Output: start time of the service in the customer
+
+    time = customers[0].start_time
+
+    for i in range(1, route.index(customer_id) + 1):
+        time += customers[route[i-1]].service_time
+        time += t[route[i-1]][route[i]]
+        if wait[route[i]] > 0.0001:
+            time += wait[route[i]]
+
+    return time
+
+def concomitance_wait(concomitances, routes, customers, t):
+    # Input: list of concomitances (elements [customer_id, route_id1, route_id2]), routes, list of customers and time matrix
+    # Output: wait vector, where each element is the wait the vehicle (row) has to wait to start the service at the customer (line)
+
+    n = len(customers) - 1
+    V = len(routes)
+
+    wait = [[0.0] * (n + 1) for _ in range(V)]
+    
+    # Evaluate which customer is serviced first and add wait to the latest service
+    for customer_id, route_id1, route_id2 in concomitances:
+        start_time1 = route_time(customer_id, routes[route_id1][0], wait[route_id1], customers, t)
+        end_time1 = start_time1 + customers[customer_id].service_time
+
+        start_time2 = route_time(customer_id, routes[route_id2][0], wait[route_id2], customers, t)
+        end_time2 = start_time2 + customers[customer_id].service_time
+
+        if end_time1 > start_time2:
+             wait[route_id2][customer_id] += end_time1 - start_time2
+        else:
+             wait[route_id1][customer_id] += end_time2 - start_time1
+    
+    return wait
+
+def check_time_windows_concomitance(wait, t, possible_route, customers):
+    # Input: wait times for the route, matrix of travel times (t), pssible route and list of customers
+    # Output: whether any of the customers or depot in the route disobeys its time window considering the wait
+
+    time = customers[0].start_time
+    for i in range(1, len(possible_route) - 1):
+        time += t[possible_route[i-1]][possible_route[i]]
+        if wait[possible_route[i]] > 0.0001:
+            time += wait[possible_route[i]]
+        if time < customers[possible_route[i]].start_time:
+            #print(f'start time violation at {possible_route[i]}')
+            return False
+        time += customers[possible_route[i]].service_time
+        if time > customers[possible_route[i]].end_time:
+            #print(f'end time violation at {possible_route[i]}')
+            return False
+        if i == 1 and time - t[possible_route[0]][possible_route[i]] > customers[possible_route[0]].end_time:
+            #print(f'depot end time violation')
+            return False
+        
+    return True
+
+def deep_copy(obj):
+    if isinstance(obj, list):
+        return [deep_copy(element) for element in obj]
+    else:
+        return obj
+    
+def swap_intra_route(route, i, j):
+    new_route = route[:]
+    
+    if 1 <= i < len(new_route) - 1 and 1 <= j < len(new_route) - 1:
+        new_route[i], new_route[j] = new_route[j], new_route[i]
+    
+    return new_route
+
+def concomitance_correction(wait, concomitances, routes, customers, t):
+    # Try to fix time windows infeasibility by swapping customer with the previous one
+
+    new_wait = deep_copy(wait)
+    new_routes = deep_copy(routes)
+
+    for customer_id, route_id1, route_id2 in concomitances:
+        if not check_time_windows_concomitance(new_wait[route_id2], t, new_routes[route_id2][0], customers):
+            new_wait[route_id2] = [0.0] * (len(customers))
+
+            # Perform swap, avoid with depot
+            if customer_id != new_routes[route_id2][0][1]: 
+                new_routes[route_id2][0] = swap_intra_route(new_routes[route_id2][0], new_routes[route_id2][0].index(customer_id), new_routes[route_id2][0].index(customer_id) - 1)
+
+            concomitances = concomitance_detection(new_routes, customers, t)
+            new_wait = concomitance_wait(concomitances, new_routes, customers, t)
+            
+            # If new route is time infeasible, avoid swap
+            if not check_time_windows_concomitance(new_wait[route_id2], t, new_routes[route_id2][0], customers):
+                new_routes = deep_copy(routes)
+                new_wait = deep_copy(wait)
+                continue
+
+    return new_routes, new_wait
+
 def harmonic_select(list):
     # Input: (ordered) list
     # Output: kth element selected according the harmonic distribuition (p(0) = 2*p(1) = 2*p(2) ...)
@@ -192,6 +289,70 @@ def harmonic_select(list):
     
     return selected_element
 
+class Individual:
+    def __init__(self, id, routes, partial_demands, wait_times, customers, vehicles, d, t):
+        self.id = id
+        self.routes = routes
+        self.partial_demands = partial_demands
+        self.wait_times = wait_times
+        self.feasibility = True  # Attribute to store feasibility
+        self.fitness = None  # Initialize fitness as None
+        
+        # Store these parameters for use in update_fitness
+        self.customers = customers
+        self.vehicles = vehicles
+        self.d = d
+        self.t = t
+
+        self.update_fitness()  # Initial calculation of fitness and feasibility
+
+    def update_fitness(self):
+        cost = 0
+        for route, vehicle_id in self.routes:
+            for i in range(1, len(route)):
+                cost += self.d[route[i - 1]][route[i]] * self.vehicles[vehicle_id].freight_cost
+
+        time_infeasibility, site_infeasibility, capacity_infeasibility, concomitance_infeasibility = 0, 0, 0, 0
+        self.feasibility = True  # Reset feasibility
+
+        for route, vehicle_id in self.routes:
+            # Time infeasibility
+            if not check_time_windows_concomitance(
+                self.wait_times[self.routes.index([route, vehicle_id])],
+                self.t,
+                route,
+                self.customers
+            ):
+                self.feasibility = False
+                if not check_time_windows(self.t, route, self.customers):
+                    time_infeasibility += 1
+                else:
+                    concomitance_infeasibility += 1
+
+            # Site infeasibility
+            for i in range(1, len(route) - 1):
+                if not check_site_dependency(self.vehicles[vehicle_id], route[i]):
+                    self.feasibility = False
+                    site_infeasibility += 1
+
+            # Capacity infeasibility
+            if not check_vehicle_capacity(route, vehicle_id, self.partial_demands[vehicle_id], self.customers, self.vehicles):
+                self.feasibility = False
+                capacity_infeasibility += 1
+
+        total_wait = 0
+        for wait_route in self.wait_times:
+            for wait_customer in wait_route:
+                total_wait += wait_customer
+
+        # Fitness as a function of cost, wait times, and weighted infeasibilities
+        self.fitness = cost + 10000 * time_infeasibility + 10000 * site_infeasibility + 10000 * capacity_infeasibility + 500 * concomitance_infeasibility
+
+    def set_routes(self, new_routes):
+        self.routes = new_routes
+        self.update_fitness()  # Recalculate fitness when routes are updated
+
+
 def clarke_wright_randomized(customers, vehicles, d, t, R, size):
     # Input: list of customers, list of vehicles, matrix of distances (d) matrix of travel times (t), site dependency matrix (R) and population size
     # Output: Population of feasible and (time or site) infeasible routes for each vehicle and matrix of split deliveries f [vehicles x customers]
@@ -200,6 +361,7 @@ def clarke_wright_randomized(customers, vehicles, d, t, R, size):
 
     n = len(customers) - 1
     V = len(vehicles)
+    idx = -1
 
     while len(population) < size:
         savings = calculate_savings(d)
@@ -313,7 +475,12 @@ def clarke_wright_randomized(customers, vehicles, d, t, R, size):
             if len(fully_serviced) == n:
                 all_customers_serviced = True
 
-        population.append(Individual(routes, f, customers, vehicles, d, t))
+        # Check and correct concomitances (if necessary)
+        concomitances = concomitance_detection(routes, customers, t)
+        wait = concomitance_wait(concomitances, routes, customers, t)
+
+        idx += 1
+        population.append(Individual(idx, routes, f, wait, customers, vehicles, d, t))
 
     return population
 
@@ -380,7 +547,7 @@ def main():
     
     k = 0
     for i in range(len(population)):
-        print(f'Feasibility {i} = {population[i].feasibility}, Routes {i} = {population[i].routes}, f = {[[round(value, 2) for value in row] for row in population[i].partial_demands]}')
+        print(f'Feasibility {i} = {population[i].feasibility}, Routes {i} = {population[i].routes}, f = {[[round(value, 2) for value in row] for row in population[i].partial_demands]}, wait = {[[round(value, 2) for value in row] for row in population[i].wait_times]}')
         if population[i].feasibility:  k += 1
 
     print(f'{size} individuals, {k} feasible solutions found')

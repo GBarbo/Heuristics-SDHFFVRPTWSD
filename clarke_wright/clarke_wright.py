@@ -369,7 +369,7 @@ def clarke_wright(customers, vehicles, d, t, R):
         if len(fully_serviced) == n:
             all_customers_serviced = True
     
-    # Check and correct concomitances
+    # Check and correct concomitances (if necessary)
     concomitances = concomitance_detection(routes, customers, t)
     wait = concomitance_wait(concomitances, routes, customers, t)
     routes, wait = concomitance_correction(wait, concomitances, routes, customers, t)
