@@ -352,6 +352,19 @@ class Individual:
         self.routes = new_routes
         self.update_fitness()  # Recalculate fitness when routes are updated
 
+def all_customers_routed(routes, n):
+    # Input: list of routes and number of customers
+    # Output: whether all customers belong to at least one route
+
+    routed = []
+    for k in routes:
+        route = k[0]
+        for j in route:
+            if not j in routed: routed.append(j)
+
+    if len(routed) < n + 1:    # The depot must be taken into account
+        return False
+    return True
 
 def clarke_wright_randomized(customers, vehicles, d, t, R, size):
     # Input: list of customers, list of vehicles, matrix of distances (d) matrix of travel times (t), site dependency matrix (R) and population size
@@ -397,8 +410,14 @@ def clarke_wright_randomized(customers, vehicles, d, t, R, size):
         )
         ranked_indices = [i + 1 for i in ranked_indices]
 
+        bad_sequencing = False
+
         # Main loop
         while not all_customers_serviced:
+            if bad_sequencing:
+                bad_sequencing = False
+                break
+
             if len(routes) < V:
                 for j in ranked_indices:
                     route = []
@@ -430,6 +449,10 @@ def clarke_wright_randomized(customers, vehicles, d, t, R, size):
                             iter_no_append += 1
                             continue
                         
+                        if iter_no_append > 4 * n: # Restart route construction if impossible to append to full routes too many times
+                            bad_sequencing = True
+                            break
+
                         if not (check_site_dependency(vehicle, i) and check_site_dependency(vehicle, j)) and iter_no_append < 2 * n: # Ignore if too much iter without merger
                             iter_no_append += 1
                             continue
@@ -479,8 +502,10 @@ def clarke_wright_randomized(customers, vehicles, d, t, R, size):
         concomitances = concomitance_detection(routes, customers, t)
         wait = concomitance_wait(concomitances, routes, customers, t)
 
-        idx += 1
-        population.append(Individual(idx, routes, f, wait, customers, vehicles, d, t))
+        if all_customers_routed(routes, n):
+            idx += 1
+            routes = sorted(routes, key=lambda x: x[1]) # Sort routes by vehicle_id
+            population.append(Individual(idx, routes, f, wait, customers, vehicles, d, t))
 
     return population
 

@@ -241,10 +241,11 @@ def srex_crossover(routes1, routes2, partial_demands1, partial_demands2, custome
             if i == worst1_id:  # Do not change the newly added route
                 continue
             elif customer_id in o1[i][0]:
-                service = min(overservice, fo1[i][customer_id])
+                service = min(k[1], fo1[i][customer_id])
                 serviced_demands[customer_id] -= service
                 fo1[i][customer_id] -= service
                 serviced_demands[customer_id]
+                k[1] -= service
                 if fo1[i][customer_id] < 0.0001:
                     o1[i][0].remove(customer_id)
                 if serviced_demands[customer_id] < 1.0001:
@@ -258,8 +259,9 @@ def srex_crossover(routes1, routes2, partial_demands1, partial_demands2, custome
             if i == worst1_id:  # Do not change the newly added route
                 continue
             if customer_id in o1[i][0]:
-                service = min(underservice, 1.0 - fo1[i][customer_id])
+                service = min(k[1], 1.0 - fo1[i][customer_id])
                 serviced_demands[customer_id] += service
+                k[1] -= service
                 fo1[i][customer_id] += service
                 if serviced_demands[customer_id] > 0.9999:
                     break
@@ -269,6 +271,10 @@ def srex_crossover(routes1, routes2, partial_demands1, partial_demands2, custome
             available_capacity = []
             for i in range(len(o1)):
                 route, vehicle_id = o1[i]
+                if customer_id in route:
+                    available_capacity.append(-999) # Prevent inserting in route where the customer is already there
+                    continue
+
                 load = 0
                 for j in range(len(route)):
                     load += fo1[i][j] * customers[route[j]].demand
@@ -277,9 +283,16 @@ def srex_crossover(routes1, routes2, partial_demands1, partial_demands2, custome
             
             route_id = available_capacity.index(max(available_capacity))
             o1[route_id][0].insert(led_position(o1[route_id][0], customer_id, d), customer_id)
-            fo1[route_id][customer_id] = 1.0
+            fo1[route_id][customer_id] += k[1]
+            serviced_demands[customer_id] += k[1]
                 
     # Offspring 2
+
+    # Deep copies are necessary to avoid altering the parents
+    p1 = deep_copy(routes1)
+    p2 = deep_copy(routes2)
+    f1 = deep_copy(partial_demands1)
+    f2 = deep_copy(partial_demands2)
 
     # Remove worst route from p2 and add best route from p1
 
@@ -307,10 +320,11 @@ def srex_crossover(routes1, routes2, partial_demands1, partial_demands2, custome
             if i == worst2_id:  # Do not change the newly added route
                 continue
             elif customer_id in o2[i][0]:
-                service = min(overservice, fo2[i][customer_id])
+                service = min(k[1], fo2[i][customer_id])
                 serviced_demands[customer_id] -= service
                 fo2[i][customer_id] -= service
                 serviced_demands[customer_id]
+                k[1] -= service
                 if fo2[i][customer_id] < 0.0001:
                     o2[i][0].remove(customer_id)
                 if serviced_demands[customer_id] < 1.0001:
@@ -324,8 +338,9 @@ def srex_crossover(routes1, routes2, partial_demands1, partial_demands2, custome
             if i == worst2_id:  # Do not change the newly added route
                 continue
             if customer_id in o2[i][0]:
-                service = min(underservice, 1.0 - fo2[i][customer_id])
+                service = min(k[1], 1.0 - fo2[i][customer_id])
                 serviced_demands[customer_id] += service
+                k[1] -= service
                 fo2[i][customer_id] += service
                 if serviced_demands[customer_id] > 0.9999:
                     break
@@ -335,6 +350,10 @@ def srex_crossover(routes1, routes2, partial_demands1, partial_demands2, custome
             available_capacity = []
             for i in range(len(o2)):
                 route, vehicle_id = o2[i]
+                if customer_id in route:
+                    available_capacity.append(-999) # Prevent inserting in route where the customer is already there
+                    continue
+
                 load = 0
                 for j in range(len(route)):
                     load += fo2[i][j] * customers[route[j]].demand
@@ -343,7 +362,8 @@ def srex_crossover(routes1, routes2, partial_demands1, partial_demands2, custome
             
             route_id = available_capacity.index(max(available_capacity))
             o2[route_id][0].insert(led_position(o2[route_id][0], customer_id, d), customer_id)
-            fo2[route_id][customer_id] = 1.0
+            fo2[route_id][customer_id] += k[1]
+            serviced_demands[customer_id] += k[1]
 
     return([o1,fo1],[o2,fo2])
 
@@ -441,7 +461,7 @@ def survival(population, survivors_number):
 
     return survivors
 
-def genetic_algorithm(population_size, mutation_rate, elite_rate, customers, vehicles, d, t, R):
+def genetic_algorithm(population_size, mutation_rate, elite_rate, max_iter, customers, vehicles, d, t, R):
     # Input: GA parameters (population_size, mutation_rate) HFVRPTWSP data for customers and vehicles
     # Output: Feasible routes for each vehicle and matrix of split deliveries f [vehicles x customers]
 
@@ -450,6 +470,7 @@ def genetic_algorithm(population_size, mutation_rate, elite_rate, customers, veh
 
     # Main loop
     counter = 0
+    iter_no_improv = 0
     while True:
         # Create population with offspring
         parents = sus_selection(population)
@@ -468,9 +489,19 @@ def genetic_algorithm(population_size, mutation_rate, elite_rate, customers, veh
         split_index = int(len(population) * elite_rate)
         elite_population = population[:split_index]
         
-        incumbent_individual = elite_population[0]
-        if counter == 0: best_fitness = incumbent_individual.fitness
-        
+        best_individual = elite_population[0]
+        best_individual.update_fitness()
+        best_fitness = best_individual.fitness
+
+        if counter == 0:
+            incumbent_best_fitness = best_fitness
+        else:
+            if best_fitness < incumbent_best_fitness - 0.000001:
+                iter_no_improv = 0
+                incumbent_best_fitness = best_fitness
+            else:
+                iter_no_improv += 1
+
         survivors_number = len(population)//2 - len(elite_population)
         population = population[split_index:]
         survivors = survival(population, survivors_number)
@@ -479,16 +510,15 @@ def genetic_algorithm(population_size, mutation_rate, elite_rate, customers, veh
         # Restart id
         idx = 0
         for individual in population:
-            #print(individual.fitness, individual.routes, individual.partial_demands)
             individual.id = idx
             idx += 1
-            
-        #print()
+
         counter += 1
-        if counter > 50:
+        if iter_no_improv > max_iter:
+            print(f'Finished after {counter} generations')
             break
     
-    return incumbent_individual
+    return best_individual
 
 def calculate_cost(routes, d, vehicles):
     # Input: list of routes and vehicles assigned, distances matrix and list of vehicles (objects)
@@ -565,8 +595,9 @@ def main():
     population_size = 50
     mutation_rate = 0.2
     elite_rate = 0.1
+    max_iter = 50   # Maximum number of iterations without improvement to stop
 
-    solution = genetic_algorithm(population_size, mutation_rate, elite_rate, customers, vehicles, d, t, R)
+    solution = genetic_algorithm(population_size, mutation_rate, elite_rate, max_iter, customers, vehicles, d, t, R)
     final_routes = solution.routes
     f = solution.partial_demands
     wait = solution.wait_times
